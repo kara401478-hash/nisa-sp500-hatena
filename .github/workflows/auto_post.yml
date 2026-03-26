@@ -1,0 +1,60 @@
+name: 🔥 TAKA｜新NISA実録 - 毎日自動投稿（はてなブログ版）
+on:
+  schedule:
+    - cron: "0 23 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "DRY RUNモード（投稿しない）"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+      max_articles:
+        description: "最大投稿件数"
+        required: false
+        default: "3"
+jobs:
+  auto-post:
+    name: 自動投稿
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 📦 チェックアウト
+        uses: actions/checkout@v4
+      - name: 🐍 Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 📚 パッケージインストール
+        run: pip install -r requirements.txt
+      - name: 💾 投稿済みキャッシュ復元
+        uses: actions/cache@v4
+        with:
+          path: seen_articles.json
+          key: seen-articles-${{ github.run_id }}
+          restore-keys: |
+            seen-articles-
+      - name: 🔥 自動投稿実行
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          HATENA_ID: ${{ secrets.HATENA_ID }}
+          HATENA_API_KEY: ${{ secrets.HATENA_API_KEY }}
+          HATENA_BLOG_DOMAIN: ${{ secrets.HATENA_BLOG_DOMAIN }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+          MAX_ARTICLES: ${{ github.event.inputs.max_articles || '3' }}
+        run: python main.py
+      - name: 💾 キャッシュ保存
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: seen_articles.json
+          key: seen-articles-${{ github.run_id }}
+      - name: 📊 サマリー
+        if: always()
+        run: |
+          echo "## 🔥 自動投稿完了" >> $GITHUB_STEP_SUMMARY
+          echo "- 実行: $(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')" >> $GITHUB_STEP_SUMMARY
+          echo "- DRY RUN: ${{ github.event.inputs.dry_run || 'false' }}" >> $GITHUB_STEP_SUMMARY
