@@ -15,7 +15,6 @@ from typing import List, Dict, Optional
 logger = logging.getLogger(__name__)
 
 RSS_FEEDS = [
-    # ===== Google ニュース（既存） =====
     {
         "name": "Googleニュース: 新NISA",
         "url": "https://news.google.com/rss/search?q=%E6%96%B0NISA+%E6%8A%95%E8%B3%87&hl=ja&gl=JP&ceid=JP:ja",
@@ -46,14 +45,12 @@ RSS_FEEDS = [
         "category": "積立投資",
         "source": "Googleニュース"
     },
-    # ===== Google ニュース（追加キーワード） =====
     {
         "name": "Googleニュース: eMAXIS Slim",
         "url": "https://news.google.com/rss/search?q=eMAXIS+Slim+%E3%82%A4%E3%83%B3%E3%83%87%E3%83%83%E3%82%AF%E3%82%B9&hl=ja&gl=JP&ceid=JP:ja",
         "category": "インデックス投資",
         "source": "Googleニュース"
     },
-    # ===== Yahoo!ニュース（追加） =====
     {
         "name": "Yahoo!ニュース: ビジネス",
         "url": "https://news.yahoo.co.jp/rss/topics/business.xml",
@@ -66,7 +63,6 @@ RSS_FEEDS = [
         "category": "新NISA",
         "source": "Yahoo!ファイナンス"
     },
-    # ===== 日経ビジネス（追加） =====
     {
         "name": "日経ビジネス: 最新記事",
         "url": "https://business.nikkei.com/rss/sns/nb.rdf",
@@ -75,33 +71,32 @@ RSS_FEEDS = [
     },
 ]
 
+# 投資・金融関連キーワード
+INVESTMENT_KEYWORDS = [
+    "NISA", "nisa", "投資", "積立", "株", "証券", "ファンド",
+    "インデックス", "S&P", "資産", "金利", "手数料", "配当",
+    "ETF", "iDeCo", "オルカン", "eMAXIS", "運用", "節税",
+    "銘柄", "相場", "日経平均", "為替", "円安", "円高",
+    "利回り", "複利", "分散投資", "ポートフォリオ"
+]
+
 SEEN_CACHE_FILE = "seen_articles.json"
 
 
 def _strip_html(text: str) -> str:
-    """HTMLタグと余分な空白を除去してプレーンテキストに変換する"""
     if not text:
         return ""
-    # HTMLタグを除去
     text = re.sub(r"<[^>]+>", " ", text)
-    # 連続する空白・改行を1つにまとめる
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 
 def _build_summary(entry) -> str:
-    """
-    feedparserのentryからsummaryを取得する。
-    summary → content → titleの順でフォールバックしてプレーンテキストを返す。
-    """
-    # 1. summaryを試みる
     summary = entry.get("summary", "")
     if summary:
         clean = _strip_html(summary)
-        if len(clean) > 30:  # 意味のある長さがあれば採用
+        if len(clean) > 30:
             return clean[:800]
-
-    # 2. contentを試みる（summaryより長い本文が入ることがある）
     content_list = entry.get("content", [])
     if content_list:
         for content in content_list:
@@ -110,10 +105,14 @@ def _build_summary(entry) -> str:
                 clean = _strip_html(value)
                 if len(clean) > 30:
                     return clean[:800]
-
-    # 3. タイトルだけでもフォールバック
     title = _strip_html(entry.get("title", ""))
     return title[:800]
+
+
+def _is_investment_related(article: Dict) -> bool:
+    """投資・金融関連の記事かどうかをチェック"""
+    text = article.get("title", "") + " " + article.get("summary", "")
+    return any(kw in text for kw in INVESTMENT_KEYWORDS)
 
 
 class NewsFetcher:
@@ -154,8 +153,6 @@ class NewsFetcher:
                     published = datetime(*val[:6], tzinfo=timezone.utc)
                     break
 
-            logger.debug(f"    summary({len(summary)}文字): {summary[:80]}...")
-
             return {
                 "title": title,
                 "link": link,
@@ -195,6 +192,11 @@ class NewsFetcher:
         all_articles = []
         for feed in RSS_FEEDS:
             all_articles.extend(self.fetch_feed(feed))
+
+        # 投資・金融関連のみに絞る
+        before = len(all_articles)
+        all_articles = [a for a in all_articles if _is_investment_related(a)]
+        logger.info(f"🔍 キーワードフィルター: {before}件 → {len(all_articles)}件")
 
         all_articles.sort(
             key=lambda a: a["published_dt"] or datetime.min.replace(tzinfo=timezone.utc),
